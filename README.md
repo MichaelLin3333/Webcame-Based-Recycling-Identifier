@@ -1,5 +1,10 @@
 # Webcame-Based-Recycling-Identifier
 
+**some GitHub projects for reference: **
+
+- [waste-classification-model](https://github.com/manuelamc14/waste-classification-model)
+- [waste-classification-using-YOLOv8](https://github.com/teamsmcorg/Waste-Classification-using-YOLOv8) (You might need to download Jupyter Notebook for this)
+
 Below is a detailed, step-by-step developer guide for building an **AI-Powered Recycling Identifier**. This guide is designed for students with basic Python and HTML skills and assumes a total development period of one month (four 1‑hour sessions). Each session builds on the previous one. References are provided at each step to help you dive deeper.
 
 ---
