@@ -164,89 +164,164 @@ Below is a detailed, step-by-step developer guide for building an **AI-Powered R
 
 ---
 
-## **Session 3: Integrating a Pre-trained AI Model for Image Classification**
+**Session 3 (Revised): Integrating a Pre-trained YOLOv8 Model with PyTorch**  
+*(Replaces the original Session 3 to focus on object detection and recycling-specific classification)*  
 
-### **3.1. Choosing an AI Model**
+---
 
-- **Model Selection:**  
-  For simplicity, use a pre-trained image classification model available via Hugging Face or a similar repository. For example, you can use a model that distinguishes recyclable objects from non-recyclable ones.  
-  *Tip:* If you do not have a custom dataset, you might use a generic image classification model and later customize the thresholds or labels.
+### **3.1. Choosing an AI Model**  
+For recycling tasks, **YOLOv8** (You Only Look Once) is ideal due to its real-time object detection capabilities and support for custom training [[5]][[8]]. Unlike MobileNetV2, YOLOv8 can detect and classify multiple objects in an image (e.g., bottles, cans) and map them to recycling categories. If no pre-trained model exists for your target classes (e.g., glass, plastic), follow the optional training steps below.  
 
-- **Using a Pre-trained Model:**  
-  You can use the [Hugging Face Transformers](https://huggingface.co/docs/transformers/index) library for some models, or if your task is computer vision, consider the [Hugging Face Diffusers](https://huggingface.co/docs/diffusers/index) or use a simpler TensorFlow/Keras model from [TensorFlow Hub](https://tfhub.dev/).
+---
 
-- **Reference:**  
-  - [Hugging Face Image Classification Tutorial](https://huggingface.co/blog/image-classification)  
-  - [TensorFlow Hub Image Classifier Example](https://www.tensorflow.org/tutorials/images/classification)
+### **3.2. Installing Dependencies**  
+Install PyTorch and YOLOv8:  
+```bash  
+pip install torch torchvision  # PyTorch for GPU/CPU support  
+pip install ultralytics        # Official YOLOv8 library  
+```  
+Verify your installation:  
+```python  
+import torch  
+print(torch.__version__)  # Should output a version ≥ 2.0  
+```  
 
-### **3.2. Installing Additional Dependencies**
+---
 
-- **Example (Using TensorFlow/Keras):**  
-  If you choose a TensorFlow-based model, install TensorFlow:
-  ```bash
-  pip install tensorflow
-  ```
-  *Alternatively*, if you select a PyTorch model, install PyTorch accordingly.
+### **3.3. Loading the Pre-trained YOLOv8 Model**  
+1. **Use a Pre-trained Model**:  
+   Download a YOLOv8 model trained on recycling datasets (if available). For example:  
+   ```python  
+   from ultralytics import YOLO  
+   model = YOLO("yolov8n.pt")  # Nano-sized model for speed  
+   ```  
+   If no recycling-specific model exists, use the default YOLOv8 and map its output classes (e.g., "bottle" → "plastic").  
 
-### **3.3. Loading and Using the Model in Flask**
+2. **Custom Class Mapping**:  
+   Create a dictionary to map YOLOv8’s detected classes to recycling categories:  
+   ```python  
+   RECYCLING_CATEGORIES = {  
+       "bottle": "Plastic",  
+       "can": "Metal",  
+       "cardboard": "Paper",  
+       "trash": "Non-Recyclable"  
+   }  
+   ```  
 
-- **Update app.py to Process Images:**  
-  For demonstration, here’s a simplified example using TensorFlow:
-  ```python
-  from flask import Flask, render_template, request, jsonify
-  from PIL import Image
-  import numpy as np
-  import tensorflow as tf
-  import io
+---
 
-  app = Flask(__name__)
+### **3.4. Modifying `app.py` for YOLOv8 Inference**  
+Update the `/upload` route to process images with YOLOv8:  
+```python  
+from ultralytics import YOLO  
+from PIL import Image  
+import io  
+import numpy as np  
 
-  # Load a pre-trained model from TensorFlow Hub or a saved model
-  model = tf.keras.applications.MobileNetV2(weights='imagenet')  # as an example
+app = Flask(__name__)  
+model = YOLO("yolov8n.pt")  # Load pre-trained model  
 
-  def preprocess_image(image: Image.Image):
-      # Resize image to 224x224 and convert to array
-      image = image.resize((224, 224))
-      img_array = np.array(image)
-      # Expand dimensions and preprocess for MobileNetV2
-      img_array = np.expand_dims(img_array, axis=0)
-      img_array = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
-      return img_array
+@app.route('/upload', methods=['POST'])  
+def upload():  
+    if 'file' not in request.files:  
+        return jsonify({'error': 'No file uploaded'}), 400  
+    file = request.files['file']  
+    image = Image.open(file.stream).convert('RGB')  
+    image_np = np.array(image)  
 
-  def classify_image(image: Image.Image):
-      processed_image = preprocess_image(image)
-      predictions = model.predict(processed_image)
-      # Decode predictions (this example returns the top prediction from ImageNet)
-      decoded = tf.keras.applications.mobilenet_v2.decode_predictions(predictions, top=1)[0][0]
-      # For recycling, you would customize the labels and logic accordingly.
-      label = decoded[1]
-      confidence = float(decoded[2])
-      return label, confidence
+    # Run YOLOv8 inference  
+    results = model.predict(image_np, conf=0.5)  # Confidence threshold = 50%  
+    detections = results[0].boxes  # Get detection results  
 
-  @app.route('/')
-  def index():
-      return render_template('index.html')
+    # Format results for frontend  
+    output = []  
+    for box in detections:  
+        class_id = int(box.cls[0])  
+        class_name = model.names[class_id]  
+        confidence = float(box.conf[0])  
+        output.append({  
+            "class": RECYCLING_CATEGORIES.get(class_name, "Unknown"),  
+            "confidence": f"{confidence * 100:.1f}%"  
+        })  
 
-  @app.route('/upload', methods=['POST'])
-  def upload():
-      if 'file' not in request.files:
-          return jsonify({'error': 'No file uploaded'}), 400
-      file = request.files['file']
-      image = Image.open(file.stream).convert('RGB')
-      label, confidence = classify_image(image)
-      # Here, you could map certain labels to "Recyclable" or "Not Recyclable"
-      result = f"{label} ({confidence*100:.1f}%)"
-      return jsonify({'result': result}), 200
+    return jsonify({'result': output}), 200  
+```  
 
-  if __name__ == '__main__':
-      app.run(debug=True)
-  ```
-  *Note:* This example uses MobileNetV2, which is trained on ImageNet. For a recycling identifier, you may eventually need to fine-tune a model or create a mapping that interprets certain labels (e.g., "plastic bottle," "can") as recyclable.
+---
 
-- **Reference:**  
-  - [TensorFlow Keras Applications Documentation](https://www.tensorflow.org/api_docs/python/tf/keras/applications/mobilenet_v2)  
-  - [Image Preprocessing with Pillow and TensorFlow](https://www.youtube.com/watch?v=0Lt9w-BxKFQ)
+### **3.5. (Optional) Training a Custom YOLOv8 Model**  
+If no pre-trained model fits your needs, train one using a recycling dataset like **TrashNet** or **TACO Dataset**.  
 
+#### **Step 1: Prepare Your Dataset**  
+1. **Download Data**:  
+   - [TrashNet Dataset](https://github.com/garythung/trashnet) (2,500+ images of waste).  
+   - [TACO Dataset](https://tacodataset.org/) (15,000+ annotated images).  
+2. **Organize Data**:  
+   ```  
+   dataset/  
+   ├── images/  
+   │   ├── train/  
+   │   └── val/  
+   └── labels/  
+       ├── train/  
+       └── val/  
+   ```  
+
+#### **Step 2: Configure Training**  
+Create a YAML file (`recycling.yaml`) to define classes and data paths:  
+```yaml  
+train: dataset/images/train  
+val: dataset/images/val  
+names: ["glass", "paper", "metal", "plastic", "cardboard", "trash"]  
+```  
+
+#### **Step 3: Train the Model**  
+```python  
+from ultralytics import YOLO  
+
+model = YOLO("yolov8n.pt")  # Start from pre-trained weights  
+model.train(  
+    data="recycling.yaml",  
+    epochs=50,  
+    batch=16,  
+    imgsz=640,  
+    device="cpu"  # Use "0" for GPU  
+)  
+```  
+
+#### **Step 4: Evaluate and Export**  
+```python  
+metrics = model.val()  # Validate performance  
+model.export(format="onnx")  # Export for deployment  
+```  
+
+---
+
+### **3.6. Update Session 4 (Integration & Testing)**  
+1. **Frontend Adjustments**:  
+   Modify `index.html` to display multiple detections:  
+   ```javascript  
+   .then(data => {  
+       const results = data.result;  
+       let html = "";  
+       results.forEach(item => {  
+           html += `<div>${item.class}: ${item.confidence}</div>`;  
+       });  
+       resultP.innerHTML = html;  
+   })  
+   ```  
+2. **Test with Real Data**:  
+   Use sample images of recyclables to verify detection accuracy.  
+
+---
+
+### **References**  
+- [YOLOv8 Documentation](https://docs.ultralytics.com/)  
+- [PyTorch Installation Guide](https://pytorch.org/get-started/locally/)  
+- [TrashNet Dataset](https://github.com/garythung/trashnet)  
+- [TACO Dataset](https://tacodataset.org/)  
+
+This revised session provides a robust pipeline for integrating YOLOv8, with flexibility for customization. Beginners can start with pre-trained models and later explore training on specialized datasets.
 ---
 
 ## **Session 4: Integration, Testing, and Final Touches**
