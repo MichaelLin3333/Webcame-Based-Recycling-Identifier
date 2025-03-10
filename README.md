@@ -364,4 +364,4 @@ This revised session provides a robust pipeline for integrating YOLOv8, with fle
 
 ---
 
-By following these detailed steps, your club members can create a fully functional AI-powered recycling identifier while learning key concepts in web development, image processing, and AI model integration. This project is not only a valuable learning experience but also serves a meaningful purpose for Earth Day. Happy coding!
+This project is not only a valuable learning experience but also serves a meaningful purpose for Earth Day. Happy coding!
